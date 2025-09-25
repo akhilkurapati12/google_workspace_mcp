@@ -494,3 +494,60 @@ async def check_drive_file_public_access(
         ])
     
     return "\n".join(output_parts)
+
+
+@server.tool()
+@handle_http_errors("copy_drive_file", service_type="drive")
+@require_google_service("drive", "drive_file")
+async def copy_drive_file(
+    service,
+    user_google_email: str,
+    file_id: str,
+    new_name: Optional[str] = None,
+    folder_id: Optional[str] = None,
+) -> str:
+    """
+    Creates a copy of an existing Google Drive file, supporting files in shared drives.
+    
+    Args:
+        user_google_email (str): The user's Google email address. Required.
+        file_id (str): The ID of the file to copy.
+        new_name (Optional[str]): The name for the copied file. If not provided, uses "Copy of <original_name>".
+        folder_id (Optional[str]): The ID of the folder where the copy should be placed. If not provided, copies to the same location as the original.
+    
+    Returns:
+        str: Confirmation message with the new file's name, ID, and link.
+    """
+    logger.info(f"[copy_drive_file] Invoked. Email: '{user_google_email}', File ID: '{file_id}', New Name: {new_name}, Folder ID: {folder_id}")
+    
+    # Build the copy request body
+    copy_body = {}
+    
+    if new_name:
+        copy_body['name'] = new_name
+    
+    if folder_id:
+        copy_body['parents'] = [folder_id]
+    
+    # Copy the file using Google Drive API
+    copied_file = await asyncio.to_thread(
+        service.files().copy(
+            fileId=file_id,
+            body=copy_body,
+            fields='id, name, webViewLink, parents',
+            supportsAllDrives=True
+        ).execute
+    )
+    
+    file_name = copied_file.get('name', 'Unknown')
+    file_id_new = copied_file.get('id', 'N/A')
+    link = copied_file.get('webViewLink', 'No link available')
+    
+    # Log the parent information for debugging
+    parents = copied_file.get('parents', [])
+    parent_info = f" in folder '{parents[0]}'" if parents else " in default location"
+    
+    confirmation_message = f"Successfully copied file to '{file_name}' (ID: {file_id_new}){parent_info} for {user_google_email}. Link: {link}"
+    logger.info(f"Successfully copied file. New file ID: {file_id_new}, Link: {link}")
+    
+    return confirmation_message
