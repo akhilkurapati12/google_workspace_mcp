@@ -301,6 +301,54 @@ async def create_drive_file(
     logger.info(f"Successfully created file. Link: {link}")
     return confirmation_message
 
+
+@server.tool()
+@handle_http_errors("copy_drive_file", service_type="drive")
+@require_google_service("drive", "drive_file")
+async def copy_drive_file(
+    service,
+    user_google_email: str,
+    file_id: str,
+    new_name: Optional[str] = None,
+    folder_id: Optional[str] = None,
+) -> str:
+    """
+    Copies an existing file in Google Drive.
+
+    Args:
+        user_google_email (str): The user's Google email address. Required.
+        file_id (str): The ID of the file to copy.
+        new_name (Optional[str]): The name for the copied file (optional).
+        folder_id (Optional[str]): The ID of the destination folder (optional).
+
+    Returns:
+        str: Confirmation message with details and link to the copied file.
+    """
+    logger.info(f"[copy_drive_file] Invoked. Email: '{user_google_email}', File ID: '{file_id}', New Name: '{new_name}', Folder ID: '{folder_id}'")
+
+    body = {}
+    if new_name:
+        body['name'] = new_name
+    if folder_id:
+        body['parents'] = [folder_id]
+
+    copied_file = await asyncio.to_thread(
+        service.files().copy(
+            fileId=file_id,
+            body=body,
+            supportsAllDrives=True,
+            fields='id, name, webViewLink'
+        ).execute
+    )
+
+    name = copied_file.get('name', new_name or 'Copy')
+    new_id = copied_file.get('id', 'N/A')
+    link = copied_file.get('webViewLink', 'No link available')
+    confirmation_message = f"Successfully copied file (original ID: {file_id}) as '{name}' (ID: {new_id}) for {user_google_email}. Link: {link}"
+    logger.info(f"[copy_drive_file] Success. New file: {name} ({new_id}), Link: {link}")
+    return confirmation_message
+
+
 @server.tool()
 @handle_http_errors("get_drive_file_permissions", is_read_only=True, service_type="drive")
 @require_google_service("drive", "drive_read")

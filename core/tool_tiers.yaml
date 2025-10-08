@@ -22,6 +22,7 @@ drive:
     - search_drive_files
     - get_drive_file_content
     - create_drive_file
+    - copy_drive_file
   extended:
     - list_drive_items
   complete:
@@ -103,6 +104,10 @@ slides:
     - batch_update_presentation
     - get_page
     - get_page_thumbnail
+    - get_slide_content
+    - update_slide_content
+    - copy_slide
+    - create_slide
   complete:
     - read_presentation_comments
     - create_presentation_comment
