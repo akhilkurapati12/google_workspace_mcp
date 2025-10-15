@@ -148,19 +148,21 @@ def _prepare_gmail_message(
     thread_id: Optional[str] = None,
     in_reply_to: Optional[str] = None,
     references: Optional[str] = None,
+    body_format: Literal["plain", "html"] = "plain",
 ) -> tuple[str, Optional[str]]:
     """
     Prepare a Gmail message with threading support.
 
     Args:
         subject: Email subject
-        body: Email body (plain text)
+        body: Email body content
         to: Optional recipient email address
         cc: Optional CC email address
         bcc: Optional BCC email address
         thread_id: Optional Gmail thread ID to reply within
         in_reply_to: Optional Message-ID of the message being replied to
         references: Optional chain of Message-IDs for proper threading
+        body_format: Content type for the email body ('plain' or 'html')
 
     Returns:
         Tuple of (raw_message, thread_id) where raw_message is base64 encoded
@@ -171,7 +173,11 @@ def _prepare_gmail_message(
         reply_subject = f"Re: {subject}"
 
     # Prepare the email
-    message = MIMEText(body)
+    normalized_format = body_format.lower()
+    if normalized_format not in {"plain", "html"}:
+        raise ValueError("body_format must be either 'plain' or 'html'.")
+
+    message = MIMEText(body, normalized_format)
     message["subject"] = reply_subject
 
     # Add recipients if provided
@@ -573,7 +579,10 @@ async def send_gmail_message(
     user_google_email: str,
     to: str = Body(..., description="Recipient email address."),
     subject: str = Body(..., description="Email subject."),
-    body: str = Body(..., description="Email body (plain text)."),
+    body: str = Body(..., description="Email body content (plain text or HTML)."),
+    body_format: Literal["plain", "html"] = Body(
+        "plain", description="Email body format. Use 'plain' for plaintext or 'html' for HTML content."
+    ),
     cc: Optional[str] = Body(None, description="Optional CC email address."),
     bcc: Optional[str] = Body(None, description="Optional BCC email address."),
     thread_id: Optional[str] = Body(None, description="Optional Gmail thread ID to reply within."),
@@ -586,7 +595,8 @@ async def send_gmail_message(
     Args:
         to (str): Recipient email address.
         subject (str): Email subject.
-        body (str): Email body (plain text).
+        body (str): Email body content.
+        body_format (Literal['plain', 'html']): Email body format. Defaults to 'plain'.
         cc (Optional[str]): Optional CC email address.
         bcc (Optional[str]): Optional BCC email address.
         user_google_email (str): The user's Google email address. Required.
@@ -600,6 +610,14 @@ async def send_gmail_message(
     Examples:
         # Send a new email
         send_gmail_message(to="user@example.com", subject="Hello", body="Hi there!")
+
+        # Send an HTML email
+        send_gmail_message(
+            to="user@example.com",
+            subject="Hello",
+            body="<strong>Hi there!</strong>",
+            body_format="html"
+        )
 
         # Send an email with CC and BCC
         send_gmail_message(
@@ -634,6 +652,7 @@ async def send_gmail_message(
         thread_id=thread_id,
         in_reply_to=in_reply_to,
         references=references,
+        body_format=body_format,
     )
 
     send_body = {"raw": raw_message}
@@ -658,6 +677,9 @@ async def draft_gmail_message(
     user_google_email: str,
     subject: str = Body(..., description="Email subject."),
     body: str = Body(..., description="Email body (plain text)."),
+    body_format: Literal["plain", "html"] = Body(
+        "plain", description="Email body format. Use 'plain' for plaintext or 'html' for HTML content."
+    ),
     to: Optional[str] = Body(None, description="Optional recipient email address."),
     cc: Optional[str] = Body(None, description="Optional CC email address."),
     bcc: Optional[str] = Body(None, description="Optional BCC email address."),
@@ -672,6 +694,7 @@ async def draft_gmail_message(
         user_google_email (str): The user's Google email address. Required.
         subject (str): Email subject.
         body (str): Email body (plain text).
+        body_format (Literal['plain', 'html']): Email body format. Defaults to 'plain'.
         to (Optional[str]): Optional recipient email address. Can be left empty for drafts.
         cc (Optional[str]): Optional CC email address.
         bcc (Optional[str]): Optional BCC email address.
@@ -686,7 +709,7 @@ async def draft_gmail_message(
         # Create a new draft
         draft_gmail_message(subject="Hello", body="Hi there!", to="user@example.com")
 
-        # Create a draft with CC and BCC
+        # Create a plaintext draft with CC and BCC
         draft_gmail_message(
             subject="Project Update",
             body="Here's the latest update...",
@@ -695,10 +718,31 @@ async def draft_gmail_message(
             bcc="archive@example.com"
         )
 
-        # Create a reply draft
+        # Create a HTML draft with CC and BCC
+        draft_gmail_message(
+            subject="Project Update",
+            body="<strong>Hi there!</strong>",
+            body_format="html",
+            to="user@example.com",
+            cc="manager@example.com",
+            bcc="archive@example.com"
+        )
+
+        # Create a reply draft in plaintext
         draft_gmail_message(
             subject="Re: Meeting tomorrow",
             body="Thanks for the update!",
+            to="user@example.com",
+            thread_id="thread_123",
+            in_reply_to="<message123@gmail.com>",
+            references="<original@gmail.com> <message123@gmail.com>"
+        )
+
+        # Create a reply draft in HTML
+        draft_gmail_message(
+            subject="Re: Meeting tomorrow",
+            body="<strong>Thanks for the update!</strong>",
+            body_format="html,
             to="user@example.com",
             thread_id="thread_123",
             in_reply_to="<message123@gmail.com>",
@@ -713,6 +757,7 @@ async def draft_gmail_message(
     raw_message, thread_id_final = _prepare_gmail_message(
         subject=subject,
         body=body,
+        body_format=body_format,
         to=to,
         cc=cc,
         bcc=bcc,
@@ -1173,4 +1218,3 @@ async def batch_modify_gmail_message_labels(
         actions.append(f"Removed labels: {', '.join(remove_label_ids)}")
 
     return f"Labels updated for {len(message_ids)} messages: {'; '.join(actions)}"
-

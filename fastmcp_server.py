@@ -16,18 +16,6 @@ from core.server import server, set_transport_mode, configure_server_for_http
 from core.tool_registry import set_enabled_tools as set_enabled_tool_names, wrap_server_tool_method, filter_server_tools
 from auth.scopes import set_enabled_tools
 
-# Import OAuth 2.1 route handlers
-from auth.oauth_common_handlers import (
-    handle_oauth_authorize,
-    handle_proxy_token_exchange,
-    handle_oauth_protected_resource,
-    handle_oauth_authorization_server,
-    handle_oauth_client_config,
-    handle_oauth_register,
-)
-from fastapi.responses import JSONResponse
-from starlette.requests import Request
-
 # Load environment variables
 dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
 load_dotenv(dotenv_path=dotenv_path)
@@ -86,7 +74,6 @@ else:
 
 # Set transport mode for HTTP (FastMCP CLI defaults to streamable-http)
 set_transport_mode('streamable-http')
-configure_server_for_http()
 
 # Import all tool modules to register their @server.tool() decorators
 import gmail.gmail_tools
@@ -111,30 +98,8 @@ set_enabled_tool_names(None)  # Don't filter individual tools - enable all
 # Filter tools based on configuration
 filter_server_tools(server)
 
-# Add OAuth 2.1 routes for stateless authentication
-@server.custom_route("/.well-known/oauth-protected-resource", methods=["GET", "OPTIONS"])
-async def oauth_protected_resource(request: Request):
-    return await handle_oauth_protected_resource(request)
-
-@server.custom_route("/.well-known/oauth-authorization-server", methods=["GET", "OPTIONS"])
-async def oauth_authorization_server(request: Request):
-    return await handle_oauth_authorization_server(request)
-
-@server.custom_route("/.well-known/oauth-client", methods=["GET", "OPTIONS"])
-async def oauth_client_config(request: Request):
-    return await handle_oauth_client_config(request)
-
-@server.custom_route("/oauth2/authorize", methods=["GET", "OPTIONS"])
-async def oauth_authorize(request: Request):
-    return await handle_oauth_authorize(request)
-
-@server.custom_route("/oauth2/token", methods=["POST", "OPTIONS"])
-async def oauth_token(request: Request):
-    return await handle_proxy_token_exchange(request)
-
-@server.custom_route("/oauth2/register", methods=["POST", "OPTIONS"])
-async def oauth_register(request: Request):
-    return await handle_oauth_register(request)
+# Configure authentication after scopes are known
+configure_server_for_http()
 
 # Export server instance for FastMCP CLI (looks for 'mcp', 'server', or 'app')
 mcp = server

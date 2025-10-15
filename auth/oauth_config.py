@@ -9,6 +9,7 @@ Supports both OAuth 2.0 and OAuth 2.1 with automatic client capability detection
 """
 
 import os
+from urllib.parse import urlparse
 from typing import List, Optional, Dict, Any
 
 
@@ -26,7 +27,7 @@ class OAuthConfig:
         self.base_uri = os.getenv("WORKSPACE_MCP_BASE_URI", "http://localhost")
         self.port = int(os.getenv("PORT", os.getenv("WORKSPACE_MCP_PORT", "8000")))
         self.base_url = f"{self.base_uri}:{self.port}"
-        
+
         # External URL for reverse proxy scenarios
         self.external_url = os.getenv("WORKSPACE_EXTERNAL_URL")
 
@@ -38,7 +39,7 @@ class OAuthConfig:
         self.oauth21_enabled = os.getenv("MCP_ENABLE_OAUTH21", "false").lower() == "true"
         self.pkce_required = self.oauth21_enabled  # PKCE is mandatory in OAuth 2.1
         self.supported_code_challenge_methods = ["S256", "plain"] if not self.oauth21_enabled else ["S256"]
-        
+
         # Stateless mode configuration
         self.stateless_mode = os.getenv("WORKSPACE_MCP_STATELESS_MODE", "false").lower() == "true"
         if self.stateless_mode and not self.oauth21_enabled:
@@ -49,6 +50,10 @@ class OAuthConfig:
 
         # Redirect URI configuration
         self.redirect_uri = self._get_redirect_uri()
+        self.redirect_path = self._get_redirect_path(self.redirect_uri)
+
+        # Ensure FastMCP's Google provider picks up our existing configuration
+        self._apply_fastmcp_google_env()
 
     def _get_redirect_uri(self) -> str:
         """
@@ -61,6 +66,32 @@ class OAuthConfig:
         if explicit_uri:
             return explicit_uri
         return f"{self.base_url}/oauth2callback"
+
+    @staticmethod
+    def _get_redirect_path(uri: str) -> str:
+        """Extract the redirect path from a full redirect URI."""
+        parsed = urlparse(uri)
+        if parsed.scheme or parsed.netloc:
+            path = parsed.path or "/oauth2callback"
+        else:
+            # If the value was already a path, ensure it starts with '/'
+            path = uri if uri.startswith("/") else f"/{uri}"
+        return path or "/oauth2callback"
+
+    def _apply_fastmcp_google_env(self) -> None:
+        """Mirror legacy GOOGLE_* env vars into FastMCP Google provider settings."""
+        if not self.client_id:
+            return
+
+        def _set_if_absent(key: str, value: Optional[str]) -> None:
+            if value and key not in os.environ:
+                os.environ[key] = value
+
+        _set_if_absent("FASTMCP_SERVER_AUTH", "fastmcp.server.auth.providers.google.GoogleProvider" if self.oauth21_enabled else None)
+        _set_if_absent("FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID", self.client_id)
+        _set_if_absent("FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET", self.client_secret)
+        _set_if_absent("FASTMCP_SERVER_AUTH_GOOGLE_BASE_URL", self.get_oauth_base_url())
+        _set_if_absent("FASTMCP_SERVER_AUTH_GOOGLE_REDIRECT_PATH", self.redirect_path)
 
     def get_redirect_uris(self) -> List[str]:
         """
@@ -120,7 +151,7 @@ class OAuthConfig:
     def get_oauth_base_url(self) -> str:
         """
         Get OAuth base URL for constructing OAuth endpoints.
-        
+
         Uses WORKSPACE_EXTERNAL_URL if set (for reverse proxy scenarios),
         otherwise falls back to constructed base_url with port.
 
@@ -156,6 +187,7 @@ class OAuthConfig:
             "external_url": self.external_url,
             "effective_oauth_url": self.get_oauth_base_url(),
             "redirect_uri": self.redirect_uri,
+            "redirect_path": self.redirect_path,
             "client_configured": bool(self.client_id),
             "oauth21_enabled": self.oauth21_enabled,
             "pkce_required": self.pkce_required,
@@ -249,11 +281,12 @@ class OAuthConfig:
         """
         oauth_base = self.get_oauth_base_url()
         metadata = {
-            "issuer": oauth_base,
+            "issuer": "https://accounts.google.com",
             "authorization_endpoint": f"{oauth_base}/oauth2/authorize",
             "token_endpoint": f"{oauth_base}/oauth2/token",
             "registration_endpoint": f"{oauth_base}/oauth2/register",
             "jwks_uri": "https://www.googleapis.com/oauth2/v3/certs",
+            "userinfo_endpoint": "https://openidconnect.googleapis.com/v1/userinfo",
             "response_types_supported": ["code", "token"],
             "grant_types_supported": ["authorization_code", "refresh_token"],
             "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],

@@ -9,6 +9,8 @@ from types import SimpleNamespace
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.dependencies import get_http_headers
 
+from auth.oauth21_session_store import ensure_session_from_access_token
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,7 @@ class AuthInfoMiddleware(Middleware):
     
     def __init__(self):
         super().__init__()
-        self.auth_provider_type = "Unknown"
+        self.auth_provider_type = "GoogleProvider"
     
     async def _process_request_for_auth(self, context: MiddlewareContext):
         """Helper to extract, verify, and store auth info from a request."""
@@ -87,6 +89,13 @@ class AuthInfoMiddleware(Middleware):
                                     
                                     # Store in context state - this is the authoritative authentication state
                                     context.fastmcp_context.set_state("access_token", access_token)
+                                    mcp_session_id = getattr(context.fastmcp_context, "session_id", None)
+                                    ensure_session_from_access_token(
+                                        verified_auth,
+                                        user_email,
+                                        mcp_session_id,
+                                    )
+                                    context.fastmcp_context.set_state("access_token_obj", verified_auth)
                                     context.fastmcp_context.set_state("auth_provider_type", self.auth_provider_type)
                                     context.fastmcp_context.set_state("token_type", "google_oauth")
                                     context.fastmcp_context.set_state("user_email", user_email)
@@ -216,6 +225,24 @@ class AuthInfoMiddleware(Middleware):
                             context.fastmcp_context.set_state("auth_provider_type", "oauth21_stdio")
                     except Exception as e:
                         logger.debug(f"Error checking stdio session: {e}")
+
+                # If no requested user was provided but exactly one session exists, assume it in stdio mode
+                if not context.fastmcp_context.get_state("authenticated_user_email"):
+                    try:
+                        from auth.oauth21_session_store import get_oauth21_session_store
+                        store = get_oauth21_session_store()
+                        single_user = store.get_single_user_email()
+                        if single_user:
+                            logger.debug(
+                                f"Defaulting to single stdio OAuth session for {single_user}"
+                            )
+                            context.fastmcp_context.set_state("authenticated_user_email", single_user)
+                            context.fastmcp_context.set_state("authenticated_via", "stdio_single_session")
+                            context.fastmcp_context.set_state("auth_provider_type", "oauth21_stdio")
+                            context.fastmcp_context.set_state("user_email", single_user)
+                            context.fastmcp_context.set_state("username", single_user)
+                    except Exception as e:
+                        logger.debug(f"Error determining stdio single-user session: {e}")
             
             # Check for MCP session binding
             if not context.fastmcp_context.get_state("authenticated_user_email") and hasattr(context.fastmcp_context, 'session_id'):

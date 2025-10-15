@@ -6,6 +6,7 @@ This module provides MCP tools for interacting with Google Docs API and managing
 import logging
 import asyncio
 import io
+from typing import List, Dict, Any
 
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
@@ -51,7 +52,7 @@ logger = logging.getLogger(__name__)
 @handle_http_errors("search_docs", is_read_only=True, service_type="docs")
 @require_google_service("drive", "drive_read")
 async def search_docs(
-    service,
+    service: Any,
     user_google_email: str,
     query: str,
     page_size: int = 10,
@@ -91,8 +92,8 @@ async def search_docs(
     {"service_type": "docs", "scopes": "docs_read", "param_name": "docs_service"}
 ])
 async def get_doc_content(
-    drive_service,
-    docs_service,
+    drive_service: Any,
+    docs_service: Any,
     user_google_email: str,
     document_id: str,
 ) -> str:
@@ -247,7 +248,7 @@ async def get_doc_content(
 @handle_http_errors("list_docs_in_folder", is_read_only=True, service_type="docs")
 @require_google_service("drive", "drive_read")
 async def list_docs_in_folder(
-    service,
+    service: Any,
     user_google_email: str,
     folder_id: str = 'root',
     page_size: int = 100
@@ -279,7 +280,7 @@ async def list_docs_in_folder(
 @handle_http_errors("create_doc", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def create_doc(
-    service,
+    service: Any,
     user_google_email: str,
     title: str,
     content: str = '',
@@ -307,7 +308,7 @@ async def create_doc(
 @handle_http_errors("modify_doc_text", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def modify_doc_text(
-    service,
+    service: Any,
     user_google_email: str,
     document_id: str,
     start_index: int,
@@ -445,7 +446,7 @@ async def modify_doc_text(
 @handle_http_errors("find_and_replace_doc", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def find_and_replace_doc(
-    service,
+    service: Any,
     user_google_email: str,
     document_id: str,
     find_text: str,
@@ -491,7 +492,7 @@ async def find_and_replace_doc(
 @handle_http_errors("insert_doc_elements", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def insert_doc_elements(
-    service,
+    service: Any,
     user_google_email: str,
     document_id: str,
     element_type: str,
@@ -572,14 +573,14 @@ async def insert_doc_elements(
     {"service_type": "drive", "scopes": "drive_read", "param_name": "drive_service"}
 ])
 async def insert_doc_image(
-    docs_service,
-    drive_service,
+    docs_service: Any,
+    drive_service: Any,
     user_google_email: str,
     document_id: str,
     image_source: str,
     index: int,
-    width: int = None,
-    height: int = None,
+    width: int = 0,
+    height: int = 0,
 ) -> str:
     """
     Inserts an image into a Google Doc from Drive or a URL.
@@ -648,7 +649,7 @@ async def insert_doc_image(
 @handle_http_errors("update_doc_headers_footers", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def update_doc_headers_footers(
-    service,
+    service: Any,
     user_google_email: str,
     document_id: str,
     section_type: str,
@@ -702,10 +703,10 @@ async def update_doc_headers_footers(
 @handle_http_errors("batch_update_doc", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def batch_update_doc(
-    service,
+    service: Any,
     user_google_email: str,
     document_id: str,
-    operations: list,
+    operations: List[Dict[str, Any]],
 ) -> str:
     """
     Executes multiple document operations in a single atomic batch update.
@@ -758,7 +759,7 @@ async def batch_update_doc(
 @handle_http_errors("inspect_doc_structure", is_read_only=True, service_type="docs")
 @require_google_service("docs", "docs_read")
 async def inspect_doc_structure(
-    service,
+    service: Any,
     user_google_email: str,
     document_id: str,
     detailed: bool = False,
@@ -874,10 +875,10 @@ async def inspect_doc_structure(
 @handle_http_errors("create_table_with_data", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def create_table_with_data(
-    service,
+    service: Any,
     user_google_email: str,
     document_id: str,
-    table_data: list,
+    table_data: List[List[str]],
     index: int,
     bold_headers: bool = True,
 ) -> str:
@@ -968,7 +969,7 @@ async def create_table_with_data(
 @handle_http_errors("debug_table_structure", is_read_only=True, service_type="docs")
 @require_google_service("docs", "docs_read")
 async def debug_table_structure(
-    service,
+    service: Any,
     user_google_email: str,
     document_id: str,
     table_index: int = 0,
@@ -1054,7 +1055,7 @@ async def debug_table_structure(
 @handle_http_errors("export_doc_to_pdf", service_type="drive")
 @require_google_service("drive", "drive_file")
 async def export_doc_to_pdf(
-    service,
+    service: Any,
     user_google_email: str,
     document_id: str,
     pdf_filename: str = None,

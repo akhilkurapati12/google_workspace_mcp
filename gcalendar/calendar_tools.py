@@ -84,6 +84,32 @@ def _parse_reminders_json(reminders_input: Optional[Union[str, List[Dict[str, An
     return validated_reminders
 
 
+def _apply_transparency_if_valid(
+    event_body: Dict[str, Any],
+    transparency: Optional[str],
+    function_name: str,
+) -> None:
+    """
+    Apply transparency to the event body if the provided value is valid.
+
+    Args:
+        event_body: Event payload being constructed.
+        transparency: Provided transparency value.
+        function_name: Name of the calling function for logging context.
+    """
+    if transparency is None:
+        return
+
+    valid_transparency_values = ["opaque", "transparent"]
+    if transparency in valid_transparency_values:
+        event_body["transparency"] = transparency
+        logger.info(f"[{function_name}] Set transparency to '{transparency}'")
+    else:
+        logger.warning(
+            f"[{function_name}] Invalid transparency value '{transparency}', must be 'opaque' or 'transparent', skipping"
+        )
+
+
 def _preserve_existing_fields(event_body: Dict[str, Any], existing_event: Dict[str, Any], field_mappings: Dict[str, Any]) -> None:
     """
     Helper function to preserve existing event fields when not explicitly provided.
@@ -99,6 +125,43 @@ def _preserve_existing_fields(event_body: Dict[str, Any], existing_event: Dict[s
             logger.info(f"[modify_event] Preserving existing {field_name}")
         elif new_value is not None:
             event_body[field_name] = new_value
+
+
+def _format_attendee_details(attendees: List[Dict[str, Any]], indent: str = "  ") -> str:
+    """
+    Format attendee details including response status, organizer, and optional flags.
+
+    Example output format:
+    "  user@example.com: accepted
+  manager@example.com: declined (organizer)
+  optional-person@example.com: tentative (optional)"
+
+    Args:
+        attendees: List of attendee dictionaries from Google Calendar API
+        indent: Indentation to use for newline-separated attendees (default: "  ")
+
+    Returns:
+        Formatted string with attendee details, or "None" if no attendees
+    """
+    if not attendees:
+        return "None"
+
+    attendee_details_list = []
+    for a in attendees:
+        email = a.get("email", "unknown")
+        response_status = a.get("responseStatus", "unknown")
+        optional = a.get("optional", False)
+        organizer = a.get("organizer", False)
+
+        detail_parts = [f"{email}: {response_status}"]
+        if organizer:
+            detail_parts.append("(organizer)")
+        if optional:
+            detail_parts.append("(optional)")
+
+        attendee_details_list.append(" ".join(detail_parts))
+
+    return f"\n{indent}".join(attendee_details_list)
 
 
 # Helper function to ensure time strings for API calls are correctly formatted
@@ -216,7 +279,7 @@ async def get_events(
         time_max (Optional[str]): The end of the time range (exclusive) in RFC3339 format. If omitted, events starting from `time_min` onwards are considered (up to `max_results`). Ignored if event_id is provided.
         max_results (int): The maximum number of events to return. Defaults to 25. Ignored if event_id is provided.
         query (Optional[str]): A keyword to search for within event fields (summary, description, location). Ignored if event_id is provided.
-        detailed (bool): Whether to return detailed event information including description, location, and attendees. Defaults to False.
+        detailed (bool): Whether to return detailed event information including description, location, attendees, and attendee details (response status, organizer, optional flags). Defaults to False.
 
     Returns:
         str: A formatted list of events (summary, start and end times, link) within the specified range, or detailed information for a single event if event_id is provided.
@@ -294,6 +357,8 @@ async def get_events(
         location = item.get("location", "No Location")
         attendees = item.get("attendees", [])
         attendee_emails = ", ".join([a.get("email", "") for a in attendees]) if attendees else "None"
+        attendee_details_str = _format_attendee_details(attendees, indent="  ")
+
         event_details = (
             f'Event Details:\n'
             f'- Title: {summary}\n'
@@ -302,6 +367,7 @@ async def get_events(
             f'- Description: {description}\n'
             f'- Location: {location}\n'
             f'- Attendees: {attendee_emails}\n'
+            f'- Attendee Details: {attendee_details_str}\n'
             f'- Event ID: {event_id}\n'
             f'- Link: {link}'
         )
@@ -323,11 +389,13 @@ async def get_events(
             location = item.get("location", "No Location")
             attendees = item.get("attendees", [])
             attendee_emails = ", ".join([a.get("email", "") for a in attendees]) if attendees else "None"
+            attendee_details_str = _format_attendee_details(attendees, indent="    ")
             event_details_list.append(
                 f'- "{summary}" (Starts: {start_time}, Ends: {end_time})\n'
                 f'  Description: {description}\n'
                 f'  Location: {location}\n'
                 f'  Attendees: {attendee_emails}\n'
+                f'  Attendee Details: {attendee_details_str}\n'
                 f'  ID: {item_event_id} | Link: {link}'
             )
         else:
@@ -368,6 +436,7 @@ async def create_event(
     add_google_meet: bool = False,
     reminders: Optional[Union[str, List[Dict[str, Any]]]] = None,
     use_default_reminders: bool = True,
+    transparency: Optional[str] = None,
 ) -> str:
     """
     Creates a new event.
@@ -386,6 +455,7 @@ async def create_event(
         add_google_meet (bool): Whether to add a Google Meet video conference to the event. Defaults to False.
         reminders (Optional[Union[str, List[Dict[str, Any]]]]): JSON string or list of reminder objects. Each should have 'method' ("popup" or "email") and 'minutes' (0-40320). Max 5 reminders. Example: '[{"method": "popup", "minutes": 15}]' or [{"method": "popup", "minutes": 15}]
         use_default_reminders (bool): Whether to use calendar's default reminders. If False, uses custom reminders. Defaults to True.
+        transparency (Optional[str]): Event transparency for busy/free status. "opaque" shows as Busy (default), "transparent" shows as Available/Free. Defaults to None (uses Google Calendar default).
 
     Returns:
         str: Confirmation message of the successful event creation with event link.
@@ -438,6 +508,9 @@ async def create_event(
                     logger.info("[create_event] Custom reminders provided - disabling default reminders")
         
         event_body["reminders"] = reminder_data
+
+    # Handle transparency validation
+    _apply_transparency_if_valid(event_body, transparency, "create_event")
 
     if add_google_meet:
         request_id = str(uuid.uuid4())
@@ -544,6 +617,7 @@ async def modify_event(
     add_google_meet: Optional[bool] = None,
     reminders: Optional[Union[str, List[Dict[str, Any]]]] = None,
     use_default_reminders: Optional[bool] = None,
+    transparency: Optional[str] = None,
 ) -> str:
     """
     Modifies an existing event.
@@ -562,6 +636,7 @@ async def modify_event(
         add_google_meet (Optional[bool]): Whether to add or remove Google Meet video conference. If True, adds Google Meet; if False, removes it; if None, leaves unchanged.
         reminders (Optional[Union[str, List[Dict[str, Any]]]]): JSON string or list of reminder objects to replace existing reminders. Each should have 'method' ("popup" or "email") and 'minutes' (0-40320). Max 5 reminders. Example: '[{"method": "popup", "minutes": 15}]' or [{"method": "popup", "minutes": 15}]
         use_default_reminders (Optional[bool]): Whether to use calendar's default reminders. If specified, overrides current reminder settings.
+        transparency (Optional[str]): Event transparency for busy/free status. "opaque" shows as Busy, "transparent" shows as Available/Free. If None, preserves existing transparency setting.
 
     Returns:
         str: Confirmation message of the successful event modification with event link.
@@ -623,6 +698,9 @@ async def modify_event(
                 logger.info(f"[modify_event] Updated reminders with {len(validated_reminders)} custom reminders")
         
         event_body["reminders"] = reminder_data
+
+    # Handle transparency validation
+    _apply_transparency_if_valid(event_body, transparency, "modify_event")
 
     if (
         timezone is not None
@@ -780,5 +858,3 @@ async def delete_event(service, user_google_email: str, event_id: str, calendar_
     confirmation_message = f"Successfully deleted event (ID: {event_id}) from calendar '{calendar_id}' for {user_google_email}."
     logger.info(f"Event deleted successfully for {user_google_email}. ID: {event_id}")
     return confirmation_message
-
-

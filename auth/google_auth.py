@@ -7,6 +7,7 @@ import logging
 import os
 
 from typing import List, Optional, Tuple, Dict, Any
+from urllib.parse import parse_qs, urlparse
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -353,8 +354,18 @@ async def start_auth_flow(
         )
 
         auth_url, _ = flow.authorization_url(access_type="offline", prompt="consent")
+
+        session_id = None
+        try:
+            session_id = get_fastmcp_session_id()
+        except Exception as e:
+            logger.debug(f"Could not retrieve FastMCP session ID for state binding: {e}")
+
+        store = get_oauth21_session_store()
+        store.store_oauth_state(oauth_state, session_id=session_id)
+
         logger.info(
-            f"Auth flow started for {user_display_name}. State: {oauth_state}. Advise user to visit: {auth_url}"
+            f"Auth flow started for {user_display_name}. State: {oauth_state[:8]}... Advise user to visit: {auth_url}"
         )
 
         message_lines = [
@@ -444,7 +455,21 @@ def handle_auth_callback(
             )
             os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
-        flow = create_oauth_flow(scopes=scopes, redirect_uri=redirect_uri)
+        store = get_oauth21_session_store()
+        parsed_response = urlparse(authorization_response)
+        state_values = parse_qs(parsed_response.query).get("state")
+        state = state_values[0] if state_values else None
+
+        state_info = store.validate_and_consume_oauth_state(state, session_id=session_id)
+        logger.debug(
+            "Validated OAuth callback state %s for session %s",
+            (state[:8] if state else "<missing>"),
+            state_info.get("session_id") or "<unknown>",
+        )
+
+        flow = create_oauth_flow(
+            scopes=scopes, redirect_uri=redirect_uri, state=state
+        )
 
         # Exchange the authorization code for credentials
         # Note: fetch_token will use the redirect_uri configured in the flow

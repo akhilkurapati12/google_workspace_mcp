@@ -59,7 +59,6 @@ class EnhancedLogFormatter(logging.Formatter):
             'core.utils': '[UTILS]',
             'auth.google_auth': '[OAUTH]',
             'auth.credential_store': '[CREDS]',
-            'auth.oauth_common_handlers': '[OAUTH]',
             'gcalendar.calendar_tools': '[CALENDAR]',
             'gdrive.drive_tools': '[DRIVE]',
             'gmail.gmail_tools': '[GMAIL]',
